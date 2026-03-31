@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'dart:convert';
 
 class QRScannerScreen extends StatefulWidget {
   @override
@@ -7,19 +9,45 @@ class QRScannerScreen extends StatefulWidget {
 
 class _QRScannerScreenState extends State<QRScannerScreen> {
   bool _isScanning = true;
+  MobileScannerController _scannerController = MobileScannerController();
 
-  void _simulateScan() {
-    Future.delayed(Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() {
-          _isScanning = false;
-        });
-        _showSuccessDialog();
-      }
+  void _validateQR(String rawValue) {
+    if (!_isScanning) return; // Prevent multiple scans
+
+    setState(() {
+      _isScanning = false;
     });
+
+    _scannerController.stop();
+
+    try {
+      final data = jsonDecode(rawValue);
+      final timestamp = data['timestamp'];
+      final course = data['course'];
+
+      if (timestamp == null || course == null) {
+        throw FormatException('Missing required fields');
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      // Valid for 5 minutes (300,000 ms)
+      if (now - timestamp <= 300000) {
+        _showDialog('Success!', 'Attendance marked for\n$course.', Colors.green,
+            Icons.check_circle);
+      } else {
+        _showDialog(
+            'Expired',
+            'This QR code has expired.\nPlease ask instructor to generate a new one.',
+            Colors.orange,
+            Icons.timer_off);
+      }
+    } catch (e) {
+      _showDialog('Invalid QR', 'This QR code is not valid for attendance.',
+          Colors.red, Icons.error);
+    }
   }
 
-  void _showSuccessDialog() {
+  void _showDialog(String title, String message, Color color, IconData icon) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -32,14 +60,19 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
             children: [
               Container(
                 padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), shape: BoxShape.circle),
-                child: Icon(Icons.check_circle, color: Colors.green, size: 64),
+                decoration: BoxDecoration(
+                    color: color.withOpacity(0.1), shape: BoxShape.circle),
+                child: Icon(icon, color: color, size: 64),
               ),
               SizedBox(height: 24),
-              Text('Success!', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
               SizedBox(height: 8),
               Text(
-                'Attendance marked successfully for \nComputer Science 101.',
+                message,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey[700], fontSize: 16),
               ),
@@ -48,15 +81,20 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pop(context);
+                    Navigator.pop(context); // Close dialog
+                    Navigator.pop(context); // Go back to dashboard
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blueAccent,
                     padding: EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: Text('Done', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  child: Text('Done',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -67,9 +105,9 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    _simulateScan(); // simulating a scan for demo purposes
+  void dispose() {
+    _scannerController.dispose();
+    super.dispose();
   }
 
   @override
@@ -86,14 +124,17 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       body: Stack(
         alignment: Alignment.center,
         children: [
-          Container(
-            color: Colors.black87,
-            child: Center(
-              child: Opacity(
-                opacity: 0.05,
-                child: Icon(Icons.qr_code, size: 300, color: Colors.white),
-              ),
-            ),
+          MobileScanner(
+            controller: _scannerController,
+            onDetect: (capture) {
+              final List<Barcode> barcodes = capture.barcodes;
+              for (final barcode in barcodes) {
+                if (barcode.rawValue != null) {
+                  _validateQR(barcode.rawValue!);
+                  break;
+                }
+              }
+            },
           ),
           // Scanner overlay frame
           Container(
@@ -110,7 +151,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
               child: Container(
                 padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
+                  color: Colors.black.withOpacity(0.6),
                   borderRadius: BorderRadius.circular(30),
                 ),
                 child: Row(
@@ -118,10 +159,12 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                     SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(color: Colors.blueAccent, strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                          color: Colors.blueAccent, strokeWidth: 2),
                     ),
                     SizedBox(width: 16),
-                    Text('Scanning code...', style: TextStyle(color: Colors.white, fontSize: 16)),
+                    Text('Scanning code...',
+                        style: TextStyle(color: Colors.white, fontSize: 16)),
                   ],
                 ),
               ),

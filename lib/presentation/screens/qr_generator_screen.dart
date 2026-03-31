@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'dart:convert';
+import 'dart:async';
 
 class QRGeneratorScreen extends StatefulWidget {
   @override
@@ -8,11 +11,45 @@ class QRGeneratorScreen extends StatefulWidget {
 class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
   String _selectedCourse = 'Computer Science 101';
   bool _isGenerated = false;
+  String _qrData = '';
+  Timer? _timer;
+  int _remainingSeconds = 300; // 5 minutes validity
 
   void _generateQR() {
     setState(() {
+      _qrData = jsonEncode({
+        'course': _selectedCourse,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
       _isGenerated = true;
+      _remainingSeconds = 300; // Reset timer to 5 minutes
     });
+
+    _timer?.cancel();
+    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      if (_remainingSeconds > 0) {
+        setState(() {
+          _remainingSeconds--;
+        });
+      } else {
+        timer.cancel();
+        setState(() {
+          _isGenerated = false; // Expire QR code visually
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String get _formattedTime {
+    int minutes = _remainingSeconds ~/ 60;
+    int seconds = _remainingSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -57,6 +94,7 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
                     setState(() {
                       _selectedCourse = value!;
                       _isGenerated = false; // Reset QR code on selection change
+                      _timer?.cancel();
                     });
                   },
                 ),
@@ -78,7 +116,7 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
             SizedBox(height: 48),
             if (_isGenerated)
               Expanded(
-                child: FadeIn(
+                child: SingleChildScrollView(
                   child: Column(
                     children: [
                       Text(
@@ -102,7 +140,12 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
                             BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: Offset(0, 10))
                           ]
                         ),
-                        child: Icon(Icons.qr_code_2, size: 220, color: Colors.black87), // Dummy QR
+                        // Here we use QrImageView properly
+                        child: QrImageView(
+                          data: _qrData,
+                          version: QrVersions.auto,
+                          size: 220.0,
+                        ),
                       ),
                       SizedBox(height: 32),
                       Container(
@@ -112,7 +155,7 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
-                          'Valid for 04:59', // hardcoded dummy timer
+                          'Valid for $_formattedTime',
                           style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16),
                         ),
                       )
@@ -124,37 +167,5 @@ class _QRGeneratorScreenState extends State<QRGeneratorScreen> {
         ),
       ),
     );
-  }
-}
-
-// Simple dummy animation wrapper
-class FadeIn extends StatefulWidget {
-  final Widget child;
-  const FadeIn({required this.child});
-  @override
-  _FadeInState createState() => _FadeInState();
-}
-
-class _FadeInState extends State<FadeIn> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: Duration(milliseconds: 500));
-    _animation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(opacity: _animation, child: widget.child);
   }
 }
